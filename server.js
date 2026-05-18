@@ -10,6 +10,10 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.get('/', (req, res) => {
+  res.redirect('/host.html');
+});
+
 const PORT = process.env.PORT || 3000;
 
 function getLocalIP() {
