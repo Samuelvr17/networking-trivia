@@ -1,0 +1,273 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+const os = require('os');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+const PORT = process.env.PORT || 3000;
+
+function getLocalIP() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return 'localhost';
+}
+const LOCAL_IP = getLocalIP();
+
+// ─── PREGUNTAS ────────────────────────────────────────────────────────────────
+const QUESTIONS = [
+  {
+    question: "¿Qué porcentaje de las vacantes laborales son conseguidas por quienes aprovechan su red de contactos?",
+    options: ["70%", "85%", "52%", "95%"],
+    correct: 1,
+    explanation: "El 85% de las vacantes son obtenidas por redes de contacto. No el 70% (ese es el % de personas que ya tienen trabajo gracias a contactos)."
+  },
+  {
+    question: "¿Cuánto debe durar aproximadamente un elevator pitch?",
+    options: ["1 minuto", "45 segundos", "30 segundos", "2 minutos"],
+    correct: 2,
+    explanation: "Un elevator pitch dura unos 30 segundos: breve, claro y memorable. Más tiempo lo hace perder impacto."
+  },
+  {
+    question: "¿Qué significa literalmente la palabra 'Networking'?",
+    options: ["Red de amigos", "Trabajo en equipo", "Trabajar en red", "Conexión digital"],
+    correct: 2,
+    explanation: "'Net' significa red y 'working' significa trabajar. Networking es literalmente trabajar en red para construir relaciones profesionales."
+  },
+  {
+    question: "¿Cuál de estos NO es un tipo de networking mencionado en la exposición?",
+    options: ["Networking presencial", "Networking digital", "Networking viral", "Networking de mentoría"],
+    correct: 2,
+    explanation: "El 'networking viral' no existe como categoría. Los 5 tipos reales son: presencial, online, estratégico, operacional y de mentoría."
+  },
+  {
+    question: "¿Cuál es la ventaja PRINCIPAL del networking online frente al presencial?",
+    options: ["Es más barato", "No requiere preparación", "No tiene límites geográficos", "Genera más confianza"],
+    correct: 2,
+    explanation: "El networking online permite ampliar contactos sin limitaciones geográficas, conectando con personas en cualquier parte del mundo."
+  },
+  {
+    question: "¿Cuál de estos es un beneficio del networking mencionado en la exposición?",
+    options: ["Garantía de conseguir empleo", "Acceso a mentores y experiencias", "Eliminar la competencia", "Reducir costos empresariales"],
+    correct: 1,
+    explanation: "El networking brinda acceso a mentores con experiencia que comparten consejos y orientación. No garantiza empleo, pero abre puertas."
+  },
+  {
+    question: "¿Cuántos tipos de networking se presentaron en total en la exposición?",
+    options: ["3 tipos", "4 tipos", "6 tipos", "5 tipos"],
+    correct: 3,
+    explanation: "Se presentaron 5 tipos: presencial, online, estratégico, operacional y de mentoría. Cada uno con propósito diferente."
+  },
+  {
+    question: "¿Qué tipo de networking se centra en crear conexiones para alcanzar objetivos ESPECÍFICOS y planeados?",
+    options: ["Networking presencial", "Networking operacional", "Networking estratégico", "Networking de mentoría"],
+    correct: 2,
+    explanation: "El networking estratégico no es casualidad: se planea para conectar con personas que aporten a un objetivo concreto."
+  },
+  {
+    question: "¿Qué tipo de networking ocurre DENTRO de una organización entre colegas y equipos internos?",
+    options: ["Estratégico", "Presencial", "Digital", "Operacional"],
+    correct: 3,
+    explanation: "El networking operacional es interno. El estratégico es externo con metas específicas. No confundirlos."
+  },
+  {
+    question: "¿Cuál plataforma fue mencionada para PROMOVER eventos, webinars y conferencias especializadas?",
+    options: ["LinkedIn", "Meetup", "Eventbrite", "WhatsApp"],
+    correct: 2,
+    explanation: "Eventbrite promueve eventos de todo tipo incluyendo webinars. Meetup en cambio organiza grupos temáticos continuos. Son diferentes."
+  },
+  {
+    question: "¿Qué herramienta VERBAL es la más importante para presentarse en un evento de networking?",
+    options: ["Tarjeta de presentación", "Portafolio impreso", "Elevator pitch", "Código QR de LinkedIn"],
+    correct: 2,
+    explanation: "El elevator pitch es el discurso de 30 segundos donde explicas quién eres y qué valor ofreces. Es la herramienta verbal clave del networking."
+  },
+  {
+    question: "Según la exposición, ¿cuál es la PRIMERA acción antes de ir a un evento de networking?",
+    options: ["Llevar tarjetas de presentación", "Preparar el elevator pitch", "Actualizar LinkedIn", "Investigar quiénes asistirán"],
+    correct: 3,
+    explanation: "Lo primero: investigar quiénes asistirán y definir con quién conectar. El elevator pitch viene después. No al revés."
+  }
+];
+
+// ─── ESTADO DEL JUEGO ─────────────────────────────────────────────────────────
+let state = {
+  players: {},
+  currentQuestion: -1,
+  gameStarted: false,
+  questionActive: false,
+  timer: null,
+  timeLeft: 10,
+  phase: 'lobby',
+};
+
+function resetState() {
+  if (state.timer) clearInterval(state.timer);
+  state = { players: {}, currentQuestion: -1, gameStarted: false, questionActive: false, timer: null, timeLeft: 10, phase: 'lobby' };
+}
+
+function getLeaderboard() {
+  return Object.entries(state.players)
+    .map(([id, p]) => ({ id, name: p.name, score: p.score, lives: p.lives, eliminated: p.eliminated, answered: p.answered }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function getActivePlayers() {
+  return Object.values(state.players).filter(p => !p.eliminated);
+}
+
+function getAnsweredCount() {
+  const active = getActivePlayers();
+  return { answered: active.filter(p => p.answered).length, total: active.length };
+}
+
+function sendQuestion() {
+  const q = QUESTIONS[state.currentQuestion];
+  state.questionActive = true;
+  state.timeLeft = 10;
+  state.phase = 'question';
+  Object.values(state.players).forEach(p => { p.answered = false; });
+
+  const payload = { index: state.currentQuestion, total: QUESTIONS.length, question: q.question, options: q.options };
+  io.emit('question', payload);
+
+  if (state.timer) clearInterval(state.timer);
+  state.timer = setInterval(() => {
+    state.timeLeft--;
+    io.emit('timerUpdate', state.timeLeft);
+    if (state.timeLeft <= 0) {
+      clearInterval(state.timer);
+      state.questionActive = false;
+      handleTimeUp();
+    }
+  }, 1000);
+}
+
+function handleTimeUp() {
+  Object.entries(state.players).forEach(([id, player]) => {
+    if (!player.answered && !player.eliminated) {
+      player.lives -= 1;
+      if (player.lives <= 0) {
+        player.eliminated = true;
+        io.to(id).emit('playerFeedback', { correct: false, eliminated: true, timeUp: true });
+      } else {
+        io.to(id).emit('playerFeedback', { correct: false, lives: player.lives, timeUp: true });
+      }
+    }
+  });
+  revealAnswer();
+}
+
+function revealAnswer() {
+  state.phase = 'reveal';
+  const q = QUESTIONS[state.currentQuestion];
+  const isLast = state.currentQuestion >= QUESTIONS.length - 1;
+  io.emit('reveal', { correct: q.correct, explanation: q.explanation, leaderboard: getLeaderboard(), isLast });
+}
+
+function checkAllAnswered() {
+  const active = getActivePlayers();
+  if (active.length === 0) return;
+  if (active.every(p => p.answered)) {
+    if (state.timer) clearInterval(state.timer);
+    state.questionActive = false;
+    revealAnswer();
+  }
+}
+
+// ─── SOCKET.IO ────────────────────────────────────────────────────────────────
+io.on('connection', (socket) => {
+  socket.on('hostConnect', () => {
+    socket.join('host');
+    socket.emit('hostInit', { ip: LOCAL_IP, port: PORT, players: getLeaderboard(), totalQuestions: QUESTIONS.length, phase: state.phase });
+  });
+
+  socket.on('playerJoin', ({ name }) => {
+    if (state.gameStarted) { socket.emit('joinError', 'El juego ya comenzó. Espera la próxima ronda.'); return; }
+    const trimmed = name.trim().slice(0, 20);
+    if (!trimmed) return;
+    state.players[socket.id] = { name: trimmed, score: 0, lives: 3, answered: false, eliminated: false };
+    socket.emit('joinSuccess', { name: trimmed });
+    io.to('host').emit('playerList', getLeaderboard());
+  });
+
+  socket.on('startGame', () => {
+    if (Object.keys(state.players).length === 0) return;
+    state.gameStarted = true;
+    state.currentQuestion = 0;
+    io.emit('gameStarting');
+    setTimeout(() => sendQuestion(), 3500);
+  });
+
+  socket.on('answer', ({ questionIndex, answerIndex }) => {
+    const player = state.players[socket.id];
+    if (!player || player.answered || player.eliminated) return;
+    if (questionIndex !== state.currentQuestion || !state.questionActive) return;
+
+    player.answered = true;
+    const q = QUESTIONS[state.currentQuestion];
+    const isCorrect = answerIndex === q.correct;
+    const timeBonus = Math.round((state.timeLeft / 10) * 500);
+
+    if (isCorrect) {
+      const points = 1000 + timeBonus;
+      player.score += points;
+      socket.emit('playerFeedback', { correct: true, points, lives: player.lives });
+    } else {
+      player.lives -= 1;
+      if (player.lives <= 0) {
+        player.eliminated = true;
+        socket.emit('playerFeedback', { correct: false, eliminated: true });
+      } else {
+        socket.emit('playerFeedback', { correct: false, lives: player.lives });
+      }
+    }
+
+    io.to('host').emit('playerList', getLeaderboard());
+    io.to('host').emit('answeredUpdate', getAnsweredCount());
+    checkAllAnswered();
+  });
+
+  socket.on('nextQuestion', () => {
+    state.currentQuestion++;
+    if (state.currentQuestion >= QUESTIONS.length) {
+      state.phase = 'gameover';
+      io.emit('gameOver', { leaderboard: getLeaderboard() });
+    } else {
+      sendQuestion();
+    }
+  });
+
+  socket.on('resetGame', () => {
+    resetState();
+    io.emit('gameReset');
+  });
+
+  socket.on('disconnect', () => {
+    if (state.players[socket.id]) {
+      delete state.players[socket.id];
+      io.to('host').emit('playerList', getLeaderboard());
+    }
+  });
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('\n╔══════════════════════════════════════════╗');
+  console.log('║        🎮  NETWORKING TRIVIA             ║');
+  console.log('╠══════════════════════════════════════════╣');
+  console.log(`║  📺  Host (proyectar):                   ║`);
+  console.log(`║  http://localhost:${PORT}/host.html         ║`);
+  console.log(`║                                          ║`);
+  console.log(`║  📱  Jugadores (celular):                ║`);
+  console.log(`║  http://${LOCAL_IP}:${PORT}/player.html  ║`);
+  console.log('╚══════════════════════════════════════════╝\n');
+});
