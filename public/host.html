@@ -37,6 +37,7 @@
       background: var(--bg);
       color: var(--text);
       font-family: 'DM Sans', sans-serif;
+      font-size: 1.15rem;
     }
 
     /* ── BG GRID ── */
@@ -717,18 +718,19 @@
       style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:32px;height:100%;padding:40px;">
       <div class="lobby-brand">
         <h1>🌐 Networking Trivia</h1>
-        <p>Actividad grupal — Exposición sobre Networking</p>
       </div>
       <div class="lobby-grid">
         <div class="info-card">
-          <div class="label">📱 Jugadores: entrar desde el celular a</div>
-          <div class="url-big" id="join-url">Cargando...</div>
+          <div class="label">🌐 Ingreso</div>
+          <div class="url-big" style="font-size: 1.1rem; line-height: 1.4;">Pasaremos el link por el grupo de la clase
+            para que entren directamente</div>
+          <div id="join-url" style="display: none;"></div>
         </div>
         <div class="info-card" style="display:flex;flex-direction:column;justify-content:center;">
           <div class="label">Preguntas totales</div>
           <div style="font-family:'Syne',sans-serif;font-size:3rem;font-weight:900;color:var(--accent)" id="total-q">12
           </div>
-          <div style="color:var(--muted);font-size:.85rem;margin-top:4px">Nivel difícil · 10 seg por pregunta</div>
+          <div style="color:var(--muted);font-size:.85rem;margin-top:4px">10 seg por pregunta</div>
         </div>
         <div class="info-card players-card">
           <div class="players-header">
