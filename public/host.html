@@ -747,6 +747,7 @@
         </div>
       </div>
       <button class="btn-start" id="btn-start" onclick="startGame()" disabled>🚀 Iniciar el juego</button>
+      <button class="btn-restart" id="btn-new-round" onclick="resetGame()" style="display:none">🔄 Nueva partida</button>
     </div>
   </div>
 
@@ -815,13 +816,16 @@
 
     socket.emit('hostConnect');
 
-    socket.on('hostInit', ({ players, totalQuestions }) => {
+    socket.on('hostInit', ({ players, totalQuestions, phase }) => {
       const playerUrl = `${window.location.origin}/player.html`;
 
       document.getElementById('join-url').textContent = playerUrl;
       document.getElementById('total-q').textContent = totalQuestions;
       document.getElementById('q-tot').textContent = totalQuestions;
       updateLobbyPlayers(players);
+      document.getElementById('btn-new-round').style.display =
+        phase === 'lobby' ? 'none' : 'inline-block';
+      if (phase === 'lobby') show('lobby');
     });
 
     socket.on('playerList', (players) => {

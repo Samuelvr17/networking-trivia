@@ -119,6 +119,22 @@ function resetState() {
   state = { players: {}, currentQuestion: -1, gameStarted: false, questionActive: false, timer: null, timeLeft: 10, phase: 'lobby' };
 }
 
+function hasActivePlayers() {
+  return Object.keys(state.players).length > 0;
+}
+
+/** Partida terminada o abandonada (sin jugadores) — lista para una nueva ronda */
+function shouldStartFreshSession() {
+  if (state.phase === 'gameover') return true;
+  if (state.gameStarted && !hasActivePlayers()) return true;
+  return false;
+}
+
+function startFreshSession(notifyClients = true) {
+  resetState();
+  if (notifyClients) io.emit('gameReset');
+}
+
 function getLeaderboard() {
   return Object.entries(state.players)
     .map(([id, p]) => ({ id, name: p.name, score: p.score, lives: p.lives, eliminated: p.eliminated, answered: p.answered }))
@@ -192,7 +208,16 @@ function checkAllAnswered() {
 io.on('connection', (socket) => {
   socket.on('hostConnect', () => {
     socket.join('host');
-    socket.emit('hostInit', { ip: LOCAL_IP, port: PORT, players: getLeaderboard(), totalQuestions: QUESTIONS.length, phase: state.phase });
+    if (shouldStartFreshSession()) startFreshSession(false);
+    socket.emit('hostInit', {
+      ip: LOCAL_IP,
+      port: PORT,
+      players: getLeaderboard(),
+      totalQuestions: QUESTIONS.length,
+      phase: state.phase,
+      gameStarted: state.gameStarted,
+      currentQuestion: state.currentQuestion,
+    });
   });
 
   socket.on('playerJoin', ({ name }) => {
@@ -252,14 +277,16 @@ io.on('connection', (socket) => {
   });
 
   socket.on('resetGame', () => {
-    resetState();
-    io.emit('gameReset');
+    startFreshSession(true);
   });
 
   socket.on('disconnect', () => {
     if (state.players[socket.id]) {
       delete state.players[socket.id];
       io.to('host').emit('playerList', getLeaderboard());
+    }
+    if (state.gameStarted && !hasActivePlayers()) {
+      startFreshSession(true);
     }
   });
 });
