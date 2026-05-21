@@ -44,10 +44,10 @@ const LOCAL_IP = getLocalIP();
 // ─── PREGUNTAS ────────────────────────────────────────────────────────────────
 const QUESTIONS = [
   {
-    question: "¿Qué porcentaje de las vacantes laborales son conseguidas por quienes aprovechan su red de contactos?",
-    options: ["70%", "85%", "52%", "95%"],
-    correct: 1,
-    explanation: "El 85% de las vacantes son obtenidas por redes de contacto. No el 70% (ese es el % de personas que ya tienen trabajo gracias a contactos)."
+    question: "¿Qué describe mejor el networking?",
+    options: ["Agregar personas en redes sociales", "Acumular tarjetas de presentación", "Construir vínculos genuinos de confianza mutua", "Seguir empresas en LinkedIn"],
+    correct: 2,
+    explanation: "El networking va más allá de contactos superficiales: se trata de construir relaciones auténticas basadas en confianza y valor mutuo."
   },
   {
     question: "¿Cuánto debe durar aproximadamente un elevator pitch?",
@@ -98,10 +98,10 @@ const QUESTIONS = [
     explanation: "El networking operacional es interno. El estratégico es externo con metas específicas. No confundirlos."
   },
   {
-    question: "¿Cuál plataforma fue mencionada para PROMOVER eventos, webinars y conferencias especializadas?",
-    options: ["LinkedIn", "Meetup", "Eventbrite", "WhatsApp"],
-    correct: 2,
-    explanation: "Eventbrite promueve eventos de todo tipo incluyendo webinars. Meetup en cambio organiza grupos temáticos continuos. Son diferentes."
+    question: "¿Qué práctica impulsa oportunidades en sostenibilidad y desarrollo social?",
+    options: ["Publicar contenido en redes sociales", "Crear alianzas entre empresas, ONGs y gobiernos", "Asistir a cursos de liderazgo", "Tener un perfil actualizado en LinkedIn"],
+    correct: 1,
+    explanation: "Las alianzas entre empresas, ONGs y gobiernos generan impacto real en sostenibilidad y desarrollo social, más allá de la visibilidad individual en redes."
   },
   {
     question: "¿Qué herramienta VERBAL es la más importante para presentarse en un evento de networking?",
