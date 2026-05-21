@@ -175,6 +175,25 @@
       animation: chipIn .3s ease;
     }
 
+    .chip.chip-off {
+      opacity: .45;
+      border-style: dashed;
+    }
+
+    .server-status {
+      font-size: .85rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .server-status.ok {
+      color: var(--green);
+    }
+
+    .server-status.warn {
+      color: var(--yellow);
+    }
+
     @keyframes chipIn {
       from {
         opacity: 0;
@@ -746,6 +765,7 @@
           </div>
         </div>
       </div>
+      <div class="server-status" id="server-status">Conectando al servidor…</div>
       <button class="btn-start" id="btn-start" onclick="startGame()" disabled>🚀 Iniciar el juego</button>
       <button class="btn-restart" id="btn-new-round" onclick="resetGame()" style="display:none">🔄 Nueva partida</button>
     </div>
@@ -806,8 +826,16 @@
   </div>
 
   <script>
-    const socket = io();
+    const socket = io({
+      reconnection: true,
+      reconnectionAttempts: 25,
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 5000,
+      timeout: 25000,
+      transports: ['websocket', 'polling'],
+    });
     const CIRCUMFERENCE = 150.8;
+    let warmupTimer = null;
 
     function show(id) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -838,20 +866,44 @@
       document.getElementById('ans-total').textContent = total;
     });
 
+    async function warmupServer() {
+      const el = document.getElementById('server-status');
+      try {
+        const r = await fetch('/api/health', { cache: 'no-store' });
+        if (!r.ok) throw new Error('bad status');
+        el.textContent = '✓ Servidor listo — puedes hacer entrar a los jugadores';
+        el.className = 'server-status ok';
+      } catch {
+        el.textContent = '⚠ Servidor no responde — recarga esta página';
+        el.className = 'server-status warn';
+      }
+    }
+
+    function startWarmup() {
+      warmupServer();
+      if (warmupTimer) clearInterval(warmupTimer);
+      warmupTimer = setInterval(warmupServer, 15000);
+    }
+
     function updateLobbyPlayers(players) {
-      const count = players.length;
+      const connected = players.filter(p => !p.disconnected);
+      const count = connected.length;
       document.getElementById('player-count-badge').textContent = count;
       const chips = document.getElementById('chips-wrap');
-      if (count === 0) {
+      if (players.length === 0) {
         chips.innerHTML = '<span style="color:var(--muted);font-size:.9rem">Esperando jugadores...</span>';
       } else {
-        chips.innerHTML = players.map(p => `<div class="chip">${p.name}</div>`).join('');
+        chips.innerHTML = players.map(p =>
+          `<div class="chip ${p.disconnected ? 'chip-off' : ''}">${p.name}${p.disconnected ? ' ↻' : ''}</div>`
+        ).join('');
       }
       const btn = document.getElementById('btn-start');
       btn.disabled = count === 0;
       btn.textContent = count > 0 ? `🚀 Iniciar con ${count} jugador${count > 1 ? 'es' : ''}` : '🚀 Iniciar el juego';
       updateLB(players);
     }
+
+    startWarmup();
 
     socket.on('gameStarting', () => {
       show('countdown');

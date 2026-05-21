@@ -141,6 +141,21 @@
       min-height: 20px;
     }
 
+    .conn-status {
+      font-size: .75rem;
+      color: var(--muted);
+      text-align: center;
+      min-height: 18px;
+    }
+
+    .conn-status.warn {
+      color: var(--yellow);
+    }
+
+    .conn-status.err {
+      color: var(--red);
+    }
+
     /* ═══ WAITING ═══ */
     #waiting {
       align-items: center;
@@ -411,6 +426,7 @@
     <input type="text" class="name-input" id="name-input" placeholder="Tu nombre..." maxlength="20" autocomplete="off"
       autocorrect="off">
     <div class="err" id="err-msg"></div>
+    <div class="conn-status" id="conn-status"></div>
     <button class="btn-join" onclick="joinGame()">Unirse →</button>
   </div>
 
@@ -473,8 +489,15 @@
   </div>
 
   <script>
-    const socket = io();
-    let myName = '', myScore = 0, myLives = 3, currentQIdx = -1;
+    const socket = io({
+      reconnection: true,
+      reconnectionAttempts: 25,
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 5000,
+      timeout: 25000,
+      transports: ['websocket', 'polling'],
+    });
+    let myName = '', myScore = 0, myLives = 3, myRejoinKey = '', currentQIdx = -1, joined = false;
 
     function show(id) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -483,19 +506,65 @@
 
     function hearts(n) { return '❤️'.repeat(Math.max(0, n)) + '🖤'.repeat(Math.max(0, 3 - n)); }
 
+    function setConnStatus(msg, level = '') {
+      const el = document.getElementById('conn-status');
+      el.textContent = msg;
+      el.className = `conn-status ${level}`;
+    }
+
+    function saveSession() {
+      if (myName && myRejoinKey) {
+        sessionStorage.setItem('triviaRejoin', JSON.stringify({ name: myName, rejoinKey: myRejoinKey }));
+      }
+    }
+
     function joinGame() {
       const name = document.getElementById('name-input').value.trim();
       if (!name) { document.getElementById('err-msg').textContent = 'Escribe tu nombre primero'; return; }
-      socket.emit('playerJoin', { name });
+      document.getElementById('err-msg').textContent = '';
+      socket.emit('playerJoin', { name, rejoinKey: myRejoinKey || undefined });
+    }
+
+    function tryAutoRejoin() {
+      const raw = sessionStorage.getItem('triviaRejoin');
+      if (!raw || joined) return;
+      try {
+        const { name, rejoinKey } = JSON.parse(raw);
+        if (name && rejoinKey) {
+          myRejoinKey = rejoinKey;
+          document.getElementById('name-input').value = name;
+          socket.emit('playerJoin', { name, rejoinKey });
+        }
+      } catch (_) { /* ignore */ }
     }
 
     document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') joinGame(); });
 
-    socket.on('joinSuccess', ({ name }) => {
+    socket.on('connect', () => {
+      setConnStatus('');
+      tryAutoRejoin();
+    });
+
+    socket.on('disconnect', () => {
+      if (joined) setConnStatus('Reconectando…', 'warn');
+    });
+
+    socket.on('connect_error', () => {
+      setConnStatus('Sin conexión. Revisa el WiFi.', 'err');
+    });
+
+    socket.on('joinSuccess', ({ name, rejoinKey, score, lives, eliminated }) => {
+      joined = true;
       myName = name;
+      if (rejoinKey) myRejoinKey = rejoinKey;
+      if (score !== undefined) myScore = score;
+      if (lives !== undefined) myLives = lives;
+      saveSession();
       document.getElementById('w-name').textContent = name;
-      document.getElementById('w-lives').textContent = hearts(3);
-      show('waiting');
+      document.getElementById('w-lives').textContent = hearts(myLives);
+      setConnStatus('');
+      if (eliminated) show('eliminated');
+      else show('waiting');
     });
 
     socket.on('joinError', msg => {
@@ -559,7 +628,10 @@
       show('gameover-p');
     });
 
-    socket.on('gameReset', () => location.reload());
+    socket.on('gameReset', () => {
+      sessionStorage.removeItem('triviaRejoin');
+      location.reload();
+    });
   </script>
 </body>
 

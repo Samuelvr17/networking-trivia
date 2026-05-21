@@ -3,15 +3,29 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 45000,
+  transports: ['websocket', 'polling'],
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.redirect('/host.html');
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    phase: state.phase,
+    players: Object.keys(state.players).length,
+  });
 });
 
 const PORT = process.env.PORT || 3000;
@@ -114,9 +128,105 @@ let state = {
   phase: 'lobby',
 };
 
+const disconnectTimers = new Map();
+let emptyGameTimer = null;
+const DISCONNECT_GRACE_MS = 20000;
+const EMPTY_GAME_RESET_MS = 45000;
+
+function newRejoinKey() {
+  return crypto.randomBytes(8).toString('hex');
+}
+
+function cancelEmptyGameReset() {
+  if (emptyGameTimer) {
+    clearTimeout(emptyGameTimer);
+    emptyGameTimer = null;
+  }
+}
+
+function scheduleEmptyGameReset() {
+  cancelEmptyGameReset();
+  if (!state.gameStarted || hasActivePlayers()) return;
+  emptyGameTimer = setTimeout(() => {
+    emptyGameTimer = null;
+    if (state.gameStarted && !hasActivePlayers()) startFreshSession(true);
+  }, EMPTY_GAME_RESET_MS);
+}
+
+function clearDisconnectTimers() {
+  disconnectTimers.forEach((t) => clearTimeout(t));
+  disconnectTimers.clear();
+}
+
 function resetState() {
   if (state.timer) clearInterval(state.timer);
+  clearDisconnectTimers();
+  cancelEmptyGameReset();
   state = { players: {}, currentQuestion: -1, gameStarted: false, questionActive: false, timer: null, timeLeft: 10, phase: 'lobby' };
+}
+
+function findPlayerByRejoinKey(rejoinKey) {
+  if (!rejoinKey) return null;
+  for (const [id, p] of Object.entries(state.players)) {
+    if (p.rejoinKey === rejoinKey) return [id, p];
+  }
+  return null;
+}
+
+function migratePlayerSocket(oldId, socket, player) {
+  if (disconnectTimers.has(oldId)) {
+    clearTimeout(disconnectTimers.get(oldId));
+    disconnectTimers.delete(oldId);
+  }
+  delete state.players[oldId];
+  player.disconnected = false;
+  state.players[socket.id] = player;
+  cancelEmptyGameReset();
+}
+
+function schedulePlayerRemoval(socketId) {
+  const player = state.players[socketId];
+  if (!player || disconnectTimers.has(socketId)) return;
+  player.disconnected = true;
+  io.to('host').emit('playerList', getLeaderboard());
+  disconnectTimers.set(socketId, setTimeout(() => {
+    disconnectTimers.delete(socketId);
+    if (state.players[socketId]) {
+      delete state.players[socketId];
+      io.to('host').emit('playerList', getLeaderboard());
+      if (state.gameStarted && !hasActivePlayers()) scheduleEmptyGameReset();
+    }
+  }, DISCONNECT_GRACE_MS));
+}
+
+function syncPlayerState(socket, player) {
+  socket.emit('joinSuccess', { name: player.name, rejoinKey: player.rejoinKey, score: player.score, lives: player.lives, eliminated: player.eliminated });
+  if (!state.gameStarted) return;
+
+  if (player.eliminated) {
+    socket.emit('playerFeedback', { correct: false, eliminated: true });
+    return;
+  }
+
+  if (state.phase === 'gameover') {
+    socket.emit('gameOver', { leaderboard: getLeaderboard() });
+    return;
+  }
+
+  const q = QUESTIONS[state.currentQuestion];
+  if (state.phase === 'question' || state.phase === 'reveal') {
+    socket.emit('question', {
+      index: state.currentQuestion,
+      total: QUESTIONS.length,
+      question: q.question,
+      options: q.options,
+    });
+    if (state.phase === 'question') socket.emit('timerUpdate', state.timeLeft);
+    if (state.phase === 'reveal') {
+      const isLast = state.currentQuestion >= QUESTIONS.length - 1;
+      socket.emit('reveal', { correct: q.correct, explanation: q.explanation, leaderboard: getLeaderboard(), isLast });
+    }
+  }
 }
 
 function hasActivePlayers() {
@@ -137,7 +247,15 @@ function startFreshSession(notifyClients = true) {
 
 function getLeaderboard() {
   return Object.entries(state.players)
-    .map(([id, p]) => ({ id, name: p.name, score: p.score, lives: p.lives, eliminated: p.eliminated, answered: p.answered }))
+    .map(([id, p]) => ({
+      id,
+      name: p.name,
+      score: p.score,
+      lives: p.lives,
+      eliminated: p.eliminated,
+      answered: p.answered,
+      disconnected: !!p.disconnected,
+    }))
     .sort((a, b) => b.score - a.score);
 }
 
@@ -220,17 +338,50 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('playerJoin', ({ name }) => {
-    if (state.gameStarted) { socket.emit('joinError', 'El juego ya comenzó. Espera la próxima ronda.'); return; }
+  socket.on('playerJoin', ({ name, rejoinKey }) => {
     const trimmed = name.trim().slice(0, 20);
     if (!trimmed) return;
-    state.players[socket.id] = { name: trimmed, score: 0, lives: 3, answered: false, eliminated: false };
-    socket.emit('joinSuccess', { name: trimmed });
+
+    const existing = findPlayerByRejoinKey(rejoinKey);
+    if (existing) {
+      const [oldId, player] = existing;
+      migratePlayerSocket(oldId, socket, player);
+      syncPlayerState(socket, player);
+      io.to('host').emit('playerList', getLeaderboard());
+      return;
+    }
+
+    if (state.gameStarted) {
+      socket.emit('joinError', 'El juego ya comenzó. Espera la próxima ronda.');
+      return;
+    }
+
+    const nameTaken = Object.values(state.players).some(
+      (p) => !p.disconnected && p.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (nameTaken) {
+      socket.emit('joinError', 'Ese nombre ya está en uso. Elige otro.');
+      return;
+    }
+
+    const key = newRejoinKey();
+    state.players[socket.id] = {
+      name: trimmed,
+      score: 0,
+      lives: 3,
+      answered: false,
+      eliminated: false,
+      disconnected: false,
+      rejoinKey: key,
+    };
+    cancelEmptyGameReset();
+    socket.emit('joinSuccess', { name: trimmed, rejoinKey: key });
     io.to('host').emit('playerList', getLeaderboard());
   });
 
   socket.on('startGame', () => {
-    if (Object.keys(state.players).length === 0) return;
+    const connected = Object.values(state.players).filter((p) => !p.disconnected);
+    if (connected.length === 0) return;
     state.gameStarted = true;
     state.currentQuestion = 0;
     io.emit('gameStarting');
@@ -282,11 +433,14 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     if (state.players[socket.id]) {
-      delete state.players[socket.id];
-      io.to('host').emit('playerList', getLeaderboard());
-    }
-    if (state.gameStarted && !hasActivePlayers()) {
-      startFreshSession(true);
+      if (!state.gameStarted) {
+        if (disconnectTimers.has(socket.id)) clearTimeout(disconnectTimers.get(socket.id));
+        disconnectTimers.delete(socket.id);
+        delete state.players[socket.id];
+        io.to('host').emit('playerList', getLeaderboard());
+      } else {
+        schedulePlayerRemoval(socket.id);
+      }
     }
   });
 });
