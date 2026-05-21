@@ -62,10 +62,10 @@ const QUESTIONS = [
     explanation: "'Net' significa red y 'working' significa trabajar. Networking es literalmente trabajar en red para construir relaciones profesionales."
   },
   {
-    question: "¿Cuál de estos NO es un tipo de networking mencionado en la exposición?",
-    options: ["Networking presencial", "Networking digital", "Networking viral", "Networking de mentoría"],
-    correct: 2,
-    explanation: "El 'networking viral' no existe como categoría. Los 5 tipos reales son: presencial, online, estratégico, operacional y de mentoría."
+    question: "¿Qué práctica impulsa oportunidades en sostenibilidad y desarrollo social?",
+    options: ["Publicar contenido en redes sociales", "Crear alianzas entre empresas, ONGs y gobiernos", "Asistir a cursos de liderazgo", "Tener un perfil actualizado en LinkedIn"],
+    correct: 1,
+    explanation: "Las alianzas entre empresas, ONGs y gobiernos generan impacto real en sostenibilidad y desarrollo social, más allá de la visibilidad individual en redes."
   },
   {
     question: "¿Cuál es la ventaja PRINCIPAL del networking online frente al presencial?",
@@ -98,10 +98,10 @@ const QUESTIONS = [
     explanation: "El networking operacional es interno. El estratégico es externo con metas específicas. No confundirlos."
   },
   {
-    question: "¿Qué práctica impulsa oportunidades en sostenibilidad y desarrollo social?",
-    options: ["Publicar contenido en redes sociales", "Crear alianzas entre empresas, ONGs y gobiernos", "Asistir a cursos de liderazgo", "Tener un perfil actualizado en LinkedIn"],
-    correct: 1,
-    explanation: "Las alianzas entre empresas, ONGs y gobiernos generan impacto real en sostenibilidad y desarrollo social, más allá de la visibilidad individual en redes."
+    question: "¿Cuál de estos NO es un tipo de networking mencionado en la exposición?",
+    options: ["Networking presencial", "Networking digital", "Networking viral", "Networking de mentoría"],
+    correct: 2,
+    explanation: "El 'networking viral' no existe como categoría. Los 5 tipos reales son: presencial, online, estratégico, operacional y de mentoría."
   },
   {
     question: "¿Qué herramienta VERBAL es la más importante para presentarse en un evento de networking?",
